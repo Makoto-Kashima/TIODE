@@ -7,6 +7,7 @@ at.mouse = cbind(at.mouse, data.frame("stage" = tmp))
 at.mouse$stage = factor(at.mouse$stage,levels = c("E7.5","E8.5","E9.5","E10.5","E11.5","E12.5","E13.5"))
 
 # Load count data
+# RNA-Seq results are deposied in PRJNA725414 of SRA
 list = list.files("salmon")
 list.mouse = list[grep("Kuro", list)]
 rawcnt.mouse = NULL
