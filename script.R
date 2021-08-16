@@ -7,7 +7,6 @@ at.mouse = cbind(at.mouse, data.frame("stage" = tmp))
 at.mouse$stage = factor(at.mouse$stage,levels = c("E7.5","E8.5","E9.5","E10.5","E11.5","E12.5","E13.5"))
 
 # Load count data
-# RNA-Seq results are deposied in PRJNA725414 of SRA
 list = list.files("salmon")
 list.mouse = list[grep("Kuro", list)]
 rawcnt.mouse = NULL
@@ -47,7 +46,7 @@ seurat.mouse <- ScaleData(seurat.mouse, do.scale = F, do.center = T)
 seurat.mouse <- FindVariableFeatures(seurat.mouse, verbose = F, selection.method = "mvp")
 seurat.mouse = RunPCA(seurat.mouse,verbose = F)
 seurat.mouse = FindNeighbors(seurat.mouse,verbose = F)
-seurat.mouse = FindClusters(seurat.mouse,verbose = F)
+seurat.mouse = FindClusters(seurat.mouse,verbose = T,resolution = 2.5)
 DimPlot(seurat.mouse, reduction = "pca", group.by = c("stage","ident"))
 markers = FindAllMarkers(seurat.mouse,logfc.threshold = 0.5)
 pca = seurat.mouse@reductions$pca
@@ -65,7 +64,7 @@ library(SingleCellExperiment)
 sce = slingshot(sce,clusterLabels = "stage",reducedDim = "PCA",start.clus = "E7.5", end.clus = "E13.5")
 library(ggplot2)
 tmp = SlingshotDataSet(sce)
-pdf("Fig1AB.pdf")
+pdf("Fig1ab.pdf")
 g1 = DimPlot(seurat.mouse, reduction = "pca", group.by = c("stage"),pt.size = 2)+
   ylim(c(8,-7))+
   NoLegend()+
@@ -83,7 +82,65 @@ scode.1 =  as.matrix(seurat.mouse@assays$RNA@data)
 scode.2 = data.frame("id" = 1:ncol(scode.1), "pseudotime" = sce$slingPseudotime_1)
 save(scode.1, scode.2, file = "scode_input")
 
-#optimize D for Fig. 2A
+# Trendy for Fig.1c,d
+
+SSR = NULL
+for(gn in rownames(seurat.mouse@assays$RNA@data)){
+  data = data.frame("ex" = scode.1[gn,], "pseudotime" = scode.2$pseudotime, "stage" = seurat.mouse$stage)
+  stage = smooth.spline(as.numeric(data$stage),data$ex,all.knots = T, lambda = 0.001)
+  pt = smooth.spline(data$pseudotime,data$ex,all.knots = T,lambda = 0.001)
+  data.fit.stage = data.frame(x = as.numeric(data$stage), y = predict(stage,as.numeric(data$stage))$y)
+  data.fit.pt = data.frame(x = data$pseudotime, y = predict(pt,data$pseudotime)$y)
+  stage = sum(sqrt((data$ex - data.fit.stage$y )^2))
+  pt = sum(sqrt((data$ex - data.fit.pt$y)^2))
+  SSR = rbind(SSR,data.frame("stage" = stage,"pseudotime" = pt))
+  # data.fit.stage = data.frame(x = seq(1,7,length.out = 1000), y = predict(stage,seq(1,7,length.out = 1000))$y)
+  # data.fit.pt = data.frame(x = seq(range(data$pseudotime)[1],range(data$pseudotime)[2],length.out = 1000), y = predict(pt,seq(range(data$pseudotime)[1],range(data$pseudotime)[2],length.out = 1000))$y)
+  # g1 = ggplot(data, aes(x = as.numeric(stage), y = ex, color = stage))+
+  #   geom_line(data = data.fit.stage, aes(x = as.numeric(x), y = y), color = "black")+
+  #   geom_point()+
+  #   theme_bw()+
+  #   theme(legend.position = "none")
+  # g2 = ggplot(data, aes(x = pseudotime, y = ex, color = stage))+
+  #   geom_line(data = data.fit.pt, aes(x = x, y = y), color = "black")+
+  #   geom_point()+
+  #   theme_bw()+
+  #   theme(legend.position = "none")
+  # g = grid.arrange(g1,g2,ncol =2, top = gn)
+  # print(g)
+}
+pdf("Fig1d.pdf")
+ggplot(SSR, aes(x = stage, y = pseudotime))+
+  geom_point(alpha = 1)+
+  geom_abline(intercept = 0,slope = 1,color = "red")+
+  theme_bw()
+dev.off()
+rownames(SSR) = rownames(seurat.mouse@assays$RNA@data)
+100-mean(SSR$pseudotime/SSR$stage*100)
+100-mean(SSR[seurat.mouse@assays$RNA@var.features,]$pseudotime/SSR[seurat.mouse@assays$RNA@var.features,]$stage*100)
+pdf("fig1c.pdf")
+gn = "Fabp7"
+  data = data.frame("ex" = scode.1[gn,], "pseudotime" = scode.2$pseudotime, "stage" = seurat.mouse$stage)
+  stage = smooth.spline(as.numeric(data$stage),data$ex,all.knots = T, lambda = 0.001)
+  pt = smooth.spline(data$pseudotime,data$ex,all.knots = T,lambda = 0.001)
+  data.fit.stage = data.frame(x = seq(1,7,length.out = 1000), y = predict(stage,seq(1,7,length.out = 1000))$y)
+  data.fit.pt = data.frame(x = seq(range(data$pseudotime)[1],range(data$pseudotime)[2],length.out = 1000), y = predict(pt,seq(range(data$pseudotime)[1],range(data$pseudotime)[2],length.out = 1000))$y)
+  g1 = ggplot(data, aes(x = as.numeric(stage), y = ex, color = stage))+
+    geom_line(data = data.fit.stage, aes(x = as.numeric(x), y = y), color = "black")+
+    geom_point()+
+    theme_bw()+
+    theme(legend.position = "none")
+  g2 = ggplot(data, aes(x = pseudotime, y = ex, color = stage))+
+    geom_line(data = data.fit.pt, aes(x = x, y = y), color = "black")+
+    geom_point()+
+    theme_bw()+
+    theme(legend.position = "none")
+  g = grid.arrange(g1,g2,ncol =1, top = gn)
+  print(g)
+dev.off()
+SSR[gn,]
+
+#optimize D
 library(MASS)
 pnums = seq(1,20,0.5)
 tfnum <- nrow(scode.1) #gene_number
@@ -184,7 +241,7 @@ ggplot(data, aes(x=D, y = RSS))+
   theme_bw()
 dev.off()
 
-# Infering gene regulatory network with SCODE with D = 4
+# Infering gene regulatory network with SCODE with D = 5
 scode = function(i,pnum){
   RSSs = NULL
   dir = sprintf("SCODEmouse_out_all/out%s",i)
@@ -291,7 +348,7 @@ for(i in 2:repnum){
 }
 meanA <- meanA / repnum
 
-# Check reproducibility of A and RSS for Fig. 2B
+# Check reproducibility of A and RSS
 dir = "SCODEmouse_out_all"
 cors = NULL
 for(a in 1:repnum){
@@ -300,7 +357,7 @@ for(a in 1:repnum){
   cors = c(cors,cor(matrix(A,ncol = 1),matrix(meanA,ncol = 1)))
   gc(gc(gc()))
 }
-pdf("Fig.2B.pdf", height = 3.5)
+pdf("reproducibilityA.pdf", height = 3.5)
 top10 = order(cors, decreasing = T)[1:10]
 ggplot(data.frame("cor" = cors),aes(x = 1:20,y = cor))+
   geom_point()+
@@ -338,7 +395,7 @@ colnames(res.scode) = rownames(scode.1)
 rownames(res.scode) = rownames(scode.1)
 save(res.scode, file = "res-scode")
 
-# Check correlation of A and expression levels for Fig. 2D
+# Check correlation of A and expression levels
 mean = apply(seurat.mouse@assays$RNA@data, 1, mean)
 cor.col = apply(res.scode, 2, FUN = function(x){
   return(cor(mean,abs(x)))
@@ -350,7 +407,7 @@ data = data.frame("Regulator" = cor.col, "Target" = cor.row )
 library(reshape)
 data = melt(data)
 
-pdf("Fig2D.pdf",height = 3.5)
+pdf("A-expression.pdf",height = 3.5)
 ggplot(data, aes(y = value, x = variable))+
   geom_violin(fill = "gray")+
   xlab(NULL)+
@@ -383,7 +440,7 @@ abline(v = c(top, bottom), col = "blue")
 mean = apply(seurat.mouse@assays$RNA@data, 1,mean)
 library(gridExtra)
 library(ggplot2)
-pdf("Fig2EF.pdf",height = 5)
+pdf("A-mean-sox8.pdf",height = 5)
 g1 = ggplot(data.frame("A" = abs(res.scode[,gn]), "Expression" = mean), aes(x=Expression, y = A))+
   geom_point(color = "gray")+
   xlab("Average expression of targets")+
@@ -394,7 +451,7 @@ g2 = ggplot(data.frame("A" = abs(res.scode[gn,]), "Expression" = mean), aes(x=Ex
   theme_bw()
 grid.arrange(g2,g1, nrow = 2)
 dev.off()
-pdf("Fig2G.pdf", width = 9)
+pdf("A-threshold-sox8.pdf", width = 9)
 ggplot(data.frame("A" = y, "Index" = 1:length(y)), aes(x=Index, y = A))+
   geom_point(color = "gray")+
   geom_line(data = data.frame("A"=predict(fit, x =x),"Index" = 1:length(y)), color = "black")+
@@ -438,7 +495,7 @@ for(gn in colnames(res.scode)){
 }
 regulation.mat.knee = regulation.mat
 
-# Validation with TF2DNA database (http://fiserlab.org/pscan_files.tar.gz) for Fig. 3
+# TF2DNA
 answer = NULL
 list = list.dirs("TF2DNAdb")
 list = list[grep("Mus",list)]
@@ -453,7 +510,7 @@ for (dir in list) {
 library(dplyr)
 answer = answer %>% distinct(tf_name,target_name)
 TF.list = colnames(res.scode)[is.element(colnames(res.scode),unique(answer$tf_name))]
-
+save(answer, TF.list, file = "TF2DNA")
 correct.rate = NULL
 all.gene = colnames(regulation.mat)
 for (gn in TF.list) {
@@ -497,7 +554,7 @@ g4 =ggplot()+geom_point(aes(1,1), colour="white")+
         axis.text.x=element_blank(), axis.text.y=element_blank(),           
         axis.title.x=element_blank(), axis.title.y=element_blank())
 
-pdf("Fig3D.pdf")
+pdf("Fig1d.pdf")
 grid.arrange(g1, g4, g3, g2, ncol=2, nrow=2, widths=c(4, 1), heights=c(1, 4))
 dev.off()
 data = data.frame("TF" = correct.rate$gene.name,"Total" = correct.rate$Num.of.predicted.target,"Positive" = correct.rate$Num.of.predicted.target*correct.rate$correct.rate, "Negative" = correct.rate$Num.of.predicted.target-(correct.rate$Num.of.predicted.target*correct.rate$correct.rate))
@@ -506,7 +563,7 @@ library(reshape2)
 data = melt(data, id.vars = c("TF","Total"))
 data$TF = factor(data$TF, levels = as.character(unique(data$TF)))
 data$variable = factor(data$variable, levels = c("Negative","Positive"))
-pdf("Fig3C.pdf")
+pdf("Top30TF.pdf")
 ggplot(data[is.element(data$TF,data$TF[1:30]),], aes(x = TF,y=value, fill = variable))+
   geom_bar(stat = "identity", color = "black")+
   scale_fill_manual(values=c("black","white")) +
@@ -537,7 +594,7 @@ regulation.mat.rank = apply(res.scode,2,FUN = function(x){
 rownames(regulation.mat.rank) = rownames(res.scode)
 
 PR.diff = NULL
-pdf("Fig3B.pdf",height = 3.5)
+pdf("TF_th_check.pdf",height = 3.5)
 for(gn in c("E2f3","Arid5b")){
   cat(gn,"\n")
   out = NULL
@@ -611,9 +668,9 @@ g2 = ggplot(data, aes(x = FP, y = TP))+
   theme_bw()
 
 grid.arrange(g1,g2, ncol = 1)
-
 names(aucs) = TF.list
-pdf("Fig3A.pdf",width = 3.5)
+aucs.scode = aucs
+pdf("AUC.pdf",width = 3.5)
 ggplot(data.frame("AUC" = aucs), aes(y = AUC, x = 1))+
   geom_beeswarm()+
   theme_bw()
@@ -621,7 +678,6 @@ dev.off()
 which(aucs == max(aucs))
 which(aucs == min(aucs))
 
-# Overlapping analysis for ligand-receptor pairs for Fig. 4
 ligand.recepter.num = function(a, mat){
   pair = as.character(a[1])
   l = as.character(a[2])
@@ -656,10 +712,12 @@ ligand.recepter.num = function(a, mat){
 mat = regulation.mat
 ligand.target.table = NULL
 list = read.csv("TableS2.csv")
+pdf("ligand-recepter.pdf")
 for (i in 1:nrow(list)) {
   a = ligand.recepter.num(list[i,],mat)
   ligand.target.table = rbind(ligand.target.table,a$Table)
 }
+dev.off()
 
 write.csv(correct.rate, file = "TableS1.csv")
 write.csv(ligand.target.table, file = "ligand-target.csv")
@@ -667,7 +725,7 @@ write.csv(ligand.target.table, file = "ligand-target.csv")
 data = data.frame("Unique recepter targets" = ligand.target.table$Num.recepter.target-ligand.target.table$Num.overlap,"Common targets" = ligand.target.table$Num.overlap,"Unique ligand targets" = ligand.target.table$Num.ligand.target-ligand.target.table$Num.overlap, "pair" = sprintf("%s-%s",ligand.target.table$Ligand.name,ligand.target.table$Recepter.name))
 library(reshape2)
 data = melt(data)
-pdf("Fig4A.pdf")
+pdf("ligand-recepter.pdf")
 ggplot(data, aes(x = value, y = pair, fill = variable))+
   geom_bar(stat = "identity", color = "black")+
   scale_fill_manual(values = c("gray40","white","gray"))+
@@ -676,7 +734,7 @@ dev.off()
 
 # Top ligand and receotor
 library(UpSetR)
-pdf("Fig4BCD_S1.pdf", height = 3.5)
+pdf("ligand-receptor-top.pdf", height = 3.5)
 for(i in 1:nrow(list)){
   gnl = list[i,]
   ligand  = unlist(strsplit(gnl$Ligand,", "))
@@ -709,9 +767,21 @@ for(i in 1:nrow(list)){
 }
 dev.off()
 
+pdf("wnt-Ctnnb1-top.pdf", height = 3.5)
+ligand = "Wnt7a"
+receptor = "ctnnb1"
+ligand.positive = names(res.scode[regulation.mat[,ligand]>0, ligand])[res.scode[regulation.mat[,ligand]>0, ligand]>0]
+ligand.negative = names(res.scode[regulation.mat[,ligand]>0, ligand])[res.scode[regulation.mat[,ligand]>0, ligand]<0]
+receptor.positive = names(res.scode[regulation.mat[,receptor]>0, receptor])[res.scode[regulation.mat[,receptor]>0, receptor]>0]
+receptor.negative = names(res.scode[regulation.mat[,receptor]>0, receptor])[res.scode[regulation.mat[,receptor]>0, receptor]<0]
+toy = list(ligand.positive, ligand.negative, receptor.positive, receptor.negative)
+names(toy) = c(sprintf("%s_positive", ligand),sprintf("%s_negative", ligand),sprintf("%s_positive", receptor),sprintf("%s_negative", receptor))
+p = upset(fromList(toy), order.by = "freq", mb.ratio = c(0.2,0.8),point.size = 10,set_size.show = T,keep.order = T, sets = c(sprintf("%s_positive", ligand),sprintf("%s_positive", receptor),sprintf("%s_negative", ligand),sprintf("%s_negative", receptor)), intersections = list(list(sprintf("%s_positive", ligand),sprintf("%s_positive", receptor)),list(sprintf("%s_negative", ligand),sprintf("%s_negative", receptor)),list(sprintf("%s_positive", ligand),sprintf("%s_negative", receptor)),list(sprintf("%s_negative", ligand),sprintf("%s_positive", receptor))))
+print(p)
+dev.off()
 
 
-pdf("FigS3.pdf", height = 3.5)
+pdf("wnt-Fzd-top.pdf", height = 3.5)
 ligand = "Wnt7a"
 receptor = "Fzd6"
 ligand.positive = names(res.scode[regulation.mat[,ligand]>0, ligand])[res.scode[regulation.mat[,ligand]>0, ligand]>0]
@@ -734,15 +804,15 @@ p = upset(fromList(toy), order.by = "freq", mb.ratio = c(0.2,0.8),point.size = 1
 print(p)
 dev.off()
 
-pdf("FigS5.pdf", width = 14, height = 21)
+pdf("Wnt-explot.pdf", width = 14, height = 21)
 VlnPlot(seurat.mouse, features = c("Wnt1", "Wnt2" , "Wnt2b" , "Wnt3"  , "Wnt3a", "Wnt4" , "Wnt5a" , "Wnt5b", "Wnt6" ,   "Wnt7a",   "Wnt7b" , "Wnt8a","Wnt8b", "Wnt9a" , "Wnt9b" ,  "Wnt10a","Wnt10b",      "Wnt11"  ,  "Wnt16" ),group.by = "stage", ncol = 2)
 dev.off()
 
-pdf("FigS4.pdf", width = 14, height = 10.5)
+pdf("Fzd-explot.pdf", width = 14, height = 10.5)
 VlnPlot(seurat.mouse, features = c( "Fzd1", "Fzd2","Fzd3" ,"Fzd4","Fzd5", "Fzd6",  "Fzd7"  ,  "Fzd8","Fzd9","Fzd10"      ),group.by = "stage", ncol = 2)
 dev.off()
 
-pdf("Fig4D.pdf", height = 3.5)
+pdf("headihog-top.pdf", height = 3.5)
 ligand = "Ssh2"
 receptor = "Gli1"
 ligand.positive = names(res.scode[regulation.mat[,ligand]>0, ligand])[res.scode[regulation.mat[,ligand]>0, ligand]>0]
@@ -755,3 +825,119 @@ p = upset(fromList(toy), order.by = "freq", mb.ratio = c(0.2,0.8),point.size = 1
 print(p)
 dev.off()
 
+# dynGENIE3
+source("dynGENIE3/dynGENIE3_R_C_wrapper/dynGENIE3.R")
+# TS.data: a list of matrices containing time series expression data. Each
+# matrix (genes x time points) corresponds to a time series experiment. Each
+# row of a matrix is a gene, each column is a time point.
+# time.points: a list of vectors containing the time points. The k-th vector
+# must correspond to the k-th time series of TS.data
+# TS1 <- read.expr.matrix("dynGENIE3/dynGENIE3_R_C_wrapper/example_data/time_series_1.txt", form="rows.are.samples")
+# tmp = TS1[2:nrow(TS1),]
+# TS.data <- list(tmp)
+# time.points <- list(TS1[1,])
+
+tmp2 = as.integer(seurat.mouse@meta.data$stage)
+names(tmp2) = colnames(tmp)
+tmp = as.array(seurat.mouse@assays$RNA@data)
+rownames(tmp) = rownames(seurat.mouse@assays$RNA@data)
+colnames(tmp) = sprintf("sample_%s",colnames(seurat.mouse@assays$RNA@data))
+TS.data = NULL
+time.points = NULL
+for(a in 1:11){
+  sample.list = NULL
+  time.list = NULL
+  for(i in 1:7){
+    if((a!=11) | (i !=1)){
+      sample.list = c(sample.list,which(tmp2==i)[a])
+      time.list = c(time.list,i)
+    }
+  }
+  ex = tmp[,sample.list]
+  names(time.list) = colnames(ex)
+  TS.data = c(TS.data,list(ex))
+  time.points = c(time.points,list(time.list-1))
+}
+pass = NULL
+for(a in 1:length(TS.data)){
+  if(a==1){
+    pass = rowSums(TS.data[[a]]>0)==0
+  } else {
+    pass = pass + (rowSums(TS.data[[a]]>0)==0)
+  }
+}
+pass = names(which(pass==0))
+for(a in 1:length(TS.data)){
+  TS.data[[a]] = TS.data[[a]][pass,]
+}
+res.dynGENIE3 <- dynGENIE3(TS.data,time.points,ncores = 32)
+res.dynGENIE3 = t(res.dynGENIE3$weight.matrix)
+save(res.dynGENIE3,file = "res-dynGENIE3-real-time")
+plot(sort(res.dynGENIE3[,4]))
+load("TF2DNA")
+# ROC
+TF.target =  matrix(0,ncol = ncol(res.dynGENIE3), nrow = nrow(res.dynGENIE3))
+colnames(TF.target) = colnames(res.dynGENIE3)
+rownames(TF.target) = rownames(res.dynGENIE3)
+TF.list = TF.list[is.element(TF.list,colnames(TF.target))]
+for(gn in TF.list){
+  TF.target[unique(answer$target_name[answer$tf_name==gn])[is.element(unique(answer$target_name[answer$tf_name==gn]),rownames(res.dynGENIE3))],gn] = 1
+}
+library(ROCR)
+
+aucs = NULL
+for(gn in TF.list){
+  cat(gn,"\n")
+  scode = abs(res.dynGENIE3[,gn])
+  answer.TF = TF.target[,gn]
+  pred <- prediction(scode, answer.TF)
+  perf <- performance(pred, "tpr", "fpr")
+  plot(perf)
+  auc.tmp <- performance(pred,"auc")
+  auc <- as.numeric(auc.tmp@y.values)
+  aucs = c(aucs, auc)
+}
+
+gn = "E2f3"
+
+scode = abs(res.dynGENIE3[,gn])
+answer.TF = TF.target[,gn]
+pred <- prediction(scode, answer.TF)
+perf <- performance(pred, "tpr", "fpr")
+data = data.frame("FP" = perf@x.values[[1]], "TP" = perf@y.values[[1]])
+g1 = ggplot(data, aes(x = FP, y = TP))+
+  geom_point()+
+  geom_abline(slope = 1,intercept = 0)+
+  ggtitle(gn)+
+  theme_bw()
+
+gn = "Arid5b"
+scode = abs(res.dynGENIE3[,gn])
+answer.TF = TF.target[,gn]
+pred <- prediction(scode, answer.TF)
+perf <- performance(pred, "tpr", "fpr")
+data = data.frame("FP" = perf@x.values[[1]], "TP" = perf@y.values[[1]])
+g2 = ggplot(data, aes(x = FP, y = TP))+
+  geom_point()+
+  geom_abline(slope = 1,intercept = 0)+
+  ggtitle(gn)+
+  theme_bw()
+
+grid.arrange(g1,g2, ncol = 1)
+
+names(aucs) = TF.list
+aucs.dyGENIE3 = aucs
+pdf("AUC_dynGENIE3.pdf",width = 3.5)
+ggplot(data.frame("AUC" = aucs), aes(y = AUC, x = 1))+
+  geom_beeswarm()+
+  theme_bw()
+dev.off()
+which(aucs == max(aucs))
+which(aucs == min(aucs))
+
+data = rbind(data.frame("Method" = "scode","AUC" = aucs.scode), data.frame("Method"= "dyGENIE3","AUC" = aucs.dyGENIE3))
+data$Method = factor(data$Method, levels = c("scode","dyGENIE3"))
+pdf("fig3a.pdf")
+ggplot(data, aes(x = Method,y = AUC))+
+  geom_beeswarm()+theme_bw()
+dev.off()
